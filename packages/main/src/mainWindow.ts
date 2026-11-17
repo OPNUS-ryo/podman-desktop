@@ -23,6 +23,8 @@ import type { BrowserWindowConstructorOptions, Rectangle } from 'electron';
 import { app, autoUpdater, BrowserWindow, ipcMain, nativeTheme, screen } from 'electron';
 import contextMenu from 'electron-context-menu';
 
+import product from '/@product.json' with { type: 'json' };
+
 import { buildDevelopmentMenu } from './development-menu-builder.js';
 import { DevelopmentModeTracker } from './development-mode-tracker.js';
 import { NavigationItemsMenuBuilder } from './navigation-items-menu-builder.js';
@@ -30,7 +32,7 @@ import { OpenDevTools } from './open-dev-tools.js';
 import type { ConfigurationRegistry } from './plugin/configuration-registry.js';
 import { LoginMinimizeHandler } from './system/window/login-minimize-handler.js';
 import type { WindowHandler } from './system/window/window-handler.js';
-import { isLinux, isMac, stoppedExtensions } from './util.js';
+import { isLinux, isMac, isWindows, stoppedExtensions } from './util.js';
 
 const openDevTools = new OpenDevTools();
 const loginMinimizeHandler = new LoginMinimizeHandler();
@@ -88,6 +90,18 @@ async function createWindow(config?: WindowConfig): Promise<BrowserWindow> {
   }
 
   const browserWindow = new BrowserWindow(browserWindowConstructorOptions);
+
+  if (isWindows() && app.isPackaged) {
+    const executable = app.getPath('exe');
+    // Give Explorer an explicit packaged identity instead of cached Electron defaults.
+    browserWindow.setAppDetails({
+      appId: product.appId,
+      appIconPath: executable,
+      appIconIndex: 0,
+      relaunchCommand: `"${executable}"`,
+      relaunchDisplayName: product.name,
+    });
+  }
 
   const { getCursorScreenPoint, getDisplayNearestPoint } = screen;
   const workArea = getDisplayNearestPoint(getCursorScreenPoint()).workArea;

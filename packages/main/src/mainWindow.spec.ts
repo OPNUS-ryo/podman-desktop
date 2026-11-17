@@ -21,6 +21,8 @@ import type Electron from 'electron';
 import { app, BrowserWindow, ipcMain, screen } from 'electron';
 import { afterEach, assert, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import product from '/@product.json' with { type: 'json' };
+
 import { DevelopmentModeTracker } from './development-mode-tracker.js';
 import { OpenDevTools } from './open-dev-tools.js';
 import type { ConfigurationRegistry } from './plugin/configuration-registry.js';
@@ -56,6 +58,8 @@ beforeEach(() => {
   } as Electron.LoginItemSettings);
   vi.mocked(util.isMac).mockReturnValue(false);
   vi.mocked(util.isLinux).mockReturnValue(false);
+  vi.mocked(util.isWindows).mockReturnValue(false);
+  Object.defineProperty(app, 'isPackaged', { configurable: true, value: false });
 
   vi.mocked(screen.getCursorScreenPoint).mockReturnValue({ x: 0, y: 0 });
   vi.mocked(screen.getDisplayNearestPoint).mockReturnValue({
@@ -67,6 +71,7 @@ beforeEach(() => {
   // Set up BrowserWindow instance methods via prototype
   BrowserWindow.prototype.loadURL = vi.fn().mockResolvedValue(undefined);
   BrowserWindow.prototype.setBounds = vi.fn();
+  BrowserWindow.prototype.setAppDetails = vi.fn();
   BrowserWindow.prototype.on = vi.fn() as unknown as typeof BrowserWindow.prototype.on;
   BrowserWindow.prototype.show = vi.fn();
   BrowserWindow.prototype.focus = vi.fn();
@@ -97,6 +102,43 @@ function getHandler(mockOnFn: ReturnType<typeof vi.fn>, eventName: string): (...
 }
 
 describe('createNewWindow', () => {
+  test('should explicitly configure the installed Windows taskbar identity and executable icon', async () => {
+    vi.mocked(util.isWindows).mockReturnValue(true);
+    Object.defineProperty(app, 'isPackaged', { configurable: true, value: true });
+    const executable = 'C:\\Program Files\\Podman Desktop\\Podman Desktop.exe';
+    vi.mocked(app.getPath).mockReturnValue(executable);
+    const { createNewWindow } = await import('./mainWindow.js');
+
+    await createNewWindow();
+
+    const bwInstance = vi.mocked(BrowserWindow).mock.results[0]?.value;
+    assert(bwInstance);
+    expect(app.getPath).toHaveBeenCalledWith('exe');
+    expect(bwInstance.setAppDetails).toHaveBeenCalledExactlyOnceWith({
+      appId: product.appId,
+      appIconPath: executable,
+      appIconIndex: 0,
+      relaunchCommand: `"${executable}"`,
+      relaunchDisplayName: product.name,
+    });
+  });
+
+  test.each([
+    { windows: true, packaged: false },
+    { windows: false, packaged: true },
+    { windows: false, packaged: false },
+  ])('should preserve taskbar defaults when windows=$windows, packaged=$packaged', async ({ windows, packaged }) => {
+    vi.mocked(util.isWindows).mockReturnValue(windows);
+    Object.defineProperty(app, 'isPackaged', { configurable: true, value: packaged });
+    const { createNewWindow } = await import('./mainWindow.js');
+
+    await createNewWindow();
+
+    const bwInstance = vi.mocked(BrowserWindow).mock.results[0]?.value;
+    assert(bwInstance);
+    expect(bwInstance.setAppDetails).not.toHaveBeenCalled();
+  });
+
   test('should show window on normal launch', async () => {
     const { createNewWindow } = await import('./mainWindow.js');
 
